@@ -120,6 +120,12 @@ class ItemCF(object):
         return numerator / denominator
 
     def predict_single(self, user_id, k=10):
+        """
+        根据指定的用户ID，给用户推荐top-K个电影
+        :param user_id: int, 指定的用户ID
+        :param k: int, 个数
+        :return: list, Top-K个电影的ID，按照推荐强度从大到小排序
+        """
         items = self.user_data[user_id]
         candidates = []
         for item_id, score in items.items():
@@ -153,52 +159,109 @@ def process_test_data(rating_data):
     return dict_data
 
 
-def evaluation():
+def dithering(recommendation, alpha, beta):
     """
-    对推荐的效果进行探索
-    :return: 
+    对推荐列表recommendation进行抖动
+    :param recommendation: list，根据推荐的强度从大到小排序的电影推荐列表
+    :param alpha: float，抖动的alpha参数，其范围在0-1
+    :param beta: float，抖动的beta参数
+    :return: list，返回抖动后的推荐列表
     """
-    rating_data = utility.load_train_data()
-    test_data = utility.load_test_data()
-    test_data = process_test_data(test_data)
-    movie_info = utility.load_movie_info()
+    len_rec = len(recommendation)
+    result = list()
+    for i in range(1, len_rec + 1):
+        item_id = recommendation[i-1]
+        score = alpha * np.log(i) + (1 - alpha) * np.random.normal(loc=0.0, scale=np.log(beta))
+        result.append((item_id, score))
+    result.sort(key=lambda item: item[1], reverse=True)
+    return [item[0] for item in result]
 
-    ucf = ItemCF()
-    ucf.train(rating_data)
-    user_id = 1
-    k = 10
-    prediction = ucf.predict_single(user_id, k)
-    goals = sorted(test_data[user_id].items(), key=lambda item: item[1], reverse=True)
-    goals = [item_score[0] for item_score in goals]
 
+def metric_precision(prediction, goals):
+    """
+    计算推荐结果的准确率，即所有推荐结果中，包含在用户已经评分的物品的比例
+    :param prediction: list，预测的推荐列表
+    :param goals: list，用户实际上已经评分的物品
+    :return: float，推荐结果中，命中用户兴趣的比例大小
+    """
     count = 0
     hit = 0
-    hit_movies = []
+    hit_movies = list()
     for item_id in prediction:
         count += 1
         if item_id in goals:
             hit += 1
             hit_movies.append(item_id)
-    print('The precision is %.2f' % (hit / count))
+    return hit / count, hit_movies
 
+
+def print_prediction_result(result, hit_movies, movies_info):
     print('==' * 40)
-    print('The %d prediction result is:' % k)
-    for item_id in prediction:
-        print(movie_info[item_id], end=' | ')
+    print('The prediction precision is %.2f' % result)
     print()
     print('==' * 40)
-    print('The user has rated is:')
-    for item_id in goals:
-        if item_id in hit_movies:
-            prefix = '**' * 4
-        else:
-            prefix = ''
-        print(prefix, movie_info[item_id], end=' | ')
-    print()
-    print('==' * 40)
-    print('And the hit movies are:')
+    print('And the hit movies are :')
     for item_id in hit_movies:
-        print(movie_info[item_id], end=' | ')
+        print(movies_info[item_id], end=' | ')
+    print(end='\n\n')
+    print('==' * 40)
+
+
+def test_dithering(prediction):
+    """
+    对系统的推荐进行抖动，观察效果
+    :param prediction: list，推荐算法直接预测的结果
+    :return: None
+    """
+    alphas = [0.1, 0.1, 0.1, 0.5, 0.5, 0.5, 0.9, 0.9, 0.9]
+    betas = [1.1, 2.0, 5.0, 1.1, 2.0, 5.0, 1.1, 20.0, 5.0]
+    result = dict()
+    for alpha, beta in zip(alphas, betas):
+        temp_result = dithering(prediction, alpha, beta)
+        result[(alpha, beta)] = temp_result
+    print('The original order of the prediction result:')
+    for item_id in prediction:
+        print(item_id, end=' ')
+    print(end='\n\n\n')
+    for key, values in result.items():
+        print('--' * 40)
+        print('Dithering of alpha=%f and beta=%f' % (key[0], key[1]), end='\n\n')
+        for item_id in values:
+            print(item_id, end=' ')
+        print(end='\n\n\n')
+
+
+def evaluation():
+    """
+    对推荐的效果进行测试
+    :return: 
+    """
+    # 读取已有的用户物品评分记录
+    rating_data = utility.load_train_data()
+    # 读取用来对推荐结果进行测试的记录数据
+    test_data = utility.load_test_data()
+    # 将三元组（用户，物品，评分）的测试数据处理成以用户为key，用户对物品的评分记录为value的字典
+    test_data = process_test_data(test_data)
+    # 读取电影ID对应的具体电影名称的数据
+    movie_info = utility.load_movie_info()
+
+    # 测试基于物品的协同过滤算法
+    ucf = UserCF()
+    ucf.train(rating_data)
+    # 指定预测推荐的用户ID，以及推荐列表的长度
+    user_id = 1
+    k = 10
+    # 给指定的用户进行推荐
+    prediction = ucf.predict_single(user_id, k)
+
+    # 获取测试数据中，指定用户已经评分的物品
+    goals = sorted(test_data[user_id].items(), key=lambda item: item[1], reverse=True)
+    goals = [item_score[0] for item_score in goals]
+
+    precision, hit_movies = metric_precision(prediction, goals)
+    print_prediction_result(precision, hit_movies, movie_info)
+
+    test_dithering(prediction)
 
 
 def main():
