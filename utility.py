@@ -9,8 +9,13 @@ Created on 2017/4/18 15:02
 from __future__ import print_function
 
 import os
+import sys
 
-DATA_DIR = 'E:/fireFoxDownload/ml-100k'
+if sys.platform == 'darwin':
+    DATA_DIR = '/Users/Yinong/Downloads/ml-100k'
+else:
+    DATA_DIR = 'E:/fireFoxDownload/ml-100k'
+
 RATING_DATA = 'u1.base'
 TEST_DATA = 'u1.test'
 MOVIE_INFO = 'u.item'
