@@ -159,16 +159,19 @@ def process_test_data(rating_data):
     return dict_data
 
 
-def dithering(recommendation, alpha, beta):
+def dithering(recommendation, alpha, beta, seed=None):
     """
     对推荐列表recommendation进行抖动
     :param recommendation: list，根据推荐的强度从大到小排序的电影推荐列表
     :param alpha: float，抖动的alpha参数，其范围在0-1
     :param beta: float，抖动的beta参数
+    :param seed: int，方便实验的重现
     :return: list，返回抖动后的推荐列表
     """
     len_rec = len(recommendation)
     result = list()
+    if seed is not None:
+        np.random.seed(seed)
     for i in range(1, len_rec + 1):
         item_id = recommendation[i-1]
         score = alpha * np.log(i) + (1 - alpha) * np.random.normal(loc=0.0, scale=np.log(beta))
@@ -177,7 +180,7 @@ def dithering(recommendation, alpha, beta):
     return [item[0] for item in result]
 
 
-def metric_precision(prediction, goals):
+def metric_precision(prediction, goals, movie_info):
     """
     计算推荐结果的准确率，即所有推荐结果中，包含在用户已经评分的物品的比例
     :param prediction: list，预测的推荐列表
@@ -187,12 +190,17 @@ def metric_precision(prediction, goals):
     count = 0
     hit = 0
     hit_movies = list()
+    print('The prediction results are:')
+    prediction_order = {}
     for item_id in prediction:
+        print(movie_info[item_id], end=' | ')
         count += 1
+        prediction_order[item_id] = count
         if item_id in goals:
             hit += 1
             hit_movies.append(item_id)
-    return hit / count, hit_movies
+    print()
+    return hit / count, hit_movies, prediction_order
 
 
 def print_prediction_result(result, hit_movies, movies_info):
@@ -207,7 +215,7 @@ def print_prediction_result(result, hit_movies, movies_info):
     print('==' * 40)
 
 
-def test_dithering(prediction):
+def test_dithering(prediction, movie_info, prediction_order):
     """
     对系统的推荐进行抖动，观察效果
     :param prediction: list，推荐算法直接预测的结果
@@ -216,8 +224,9 @@ def test_dithering(prediction):
     alphas = [0.1, 0.1, 0.1, 0.5, 0.5, 0.5, 0.9, 0.9, 0.9]
     betas = [1.1, 2.0, 5.0, 1.1, 2.0, 5.0, 1.1, 20.0, 5.0]
     result = dict()
+    seed = 1
     for alpha, beta in zip(alphas, betas):
-        temp_result = dithering(prediction, alpha, beta)
+        temp_result = dithering(prediction, alpha, beta, seed)
         result[(alpha, beta)] = temp_result
     print('The original order of the prediction result:')
     for item_id in prediction:
@@ -228,6 +237,12 @@ def test_dithering(prediction):
         print('Dithering of alpha=%f and beta=%f' % (key[0], key[1]), end='\n\n')
         for item_id in values:
             print(item_id, end=' ')
+        print()
+        for item_id in values:
+            print(movie_info[item_id], end=' ')
+        print()
+        for item_id in values:
+            print(prediction_order[item_id], end=' ')
         print(end='\n\n\n')
 
 
@@ -258,10 +273,10 @@ def evaluation():
     goals = sorted(test_data[user_id].items(), key=lambda item: item[1], reverse=True)
     goals = [item_score[0] for item_score in goals]
 
-    precision, hit_movies = metric_precision(prediction, goals)
+    precision, hit_movies, prediction_order = metric_precision(prediction, goals, movie_info)
     print_prediction_result(precision, hit_movies, movie_info)
 
-    test_dithering(prediction)
+    test_dithering(prediction, movie_info, prediction_order)
 
 
 def main():
