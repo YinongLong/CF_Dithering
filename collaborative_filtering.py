@@ -5,6 +5,7 @@ Created on 2017/4/18 15:01
 @author: YinongLong
 @file: collaborative_filtering.py
 
+关于用户和物品的相似度计算采用0/1评分方式
 """
 from __future__ import print_function
 from __future__ import division
@@ -35,48 +36,57 @@ class UserCF(object):
 
     def _similarity_user(self, user_1, user_2):
         """
-        计算两个用户之间的相似度
+        计算两个用户之间的cosine相似度，同时添加对热门物品的惩罚
         :param user_1: 
         :param user_2: 
-        :return: 
+        :return: float，两个用户之间的cosine相似度
         """
         records_1 = self.user_data[user_1]
         records_2 = self.user_data[user_2]
         numerator = 0.
         norm_user_1 = 0.
         for item_id, score in records_1.items():
-            norm_user_1 += score * score
+            norm_user_1 += 1
             if item_id in records_2:
-                numerator += score * records_2[item_id]
+                nums_popularity = len(self.item_data[item_id])
+                numerator += 1.0 / nums_popularity
         norm_user_2 = 0.
         for _, score in records_2.items():
-            norm_user_2 += score * score
+            norm_user_2 += 1
         denominator = np.sqrt(norm_user_1) * np.sqrt(norm_user_2)
         return numerator / denominator
 
-    def predict_single(self, user_id, k=10):
+    def predict_single(self, user_id, k=10, num_users=5):
         """
         对指定的单个用户ID，计算最有可能的k个推荐
-        :param user_id: 
-        :param k: 
-        :return: 
+        :param user_id: int，待推荐的用户ID
+        :param k: int，推荐的物品个数
+        :param num_users: int，计算相似邻居用户的个数
+        :return: list，推荐的物品ID列表
         """
         candidates = list()
         for cid in self.user_data.keys():
             if cid != user_id:
                 candidates.append((cid, self._similarity_user(user_id, cid)))
+
+        # 选择出最相似的num_users个用户
+        candidates = sorted(candidates, key=lambda item: item[0], reverse=True)[:num_users]
+
         result = collections.defaultdict(np.float32)
+        used_items = self.user_data[user_id]
         for cid, similarity in candidates:
             records = self.user_data[cid]
             for item_id, score in records.items():
-                result[item_id] += similarity * score
+                # 过滤掉用户已经使用过的物品
+                if item_id not in used_items:
+                    result[item_id] += similarity * score
         result = sorted(result.items(), key=lambda item: item[1], reverse=True)
         return [result[i][0] for i in range(k)]
 
-    def predict(self, user_ids, k=10):
+    def predict(self, user_ids, k=10, num_users=5):
         result = dict()
         for user_id in user_ids:
-            result[user_id] = self.predict_single(user_id, k)
+            result[user_id] = self.predict_single(user_id, k, num_users)
         return result
 
 
@@ -110,12 +120,13 @@ class ItemCF(object):
         numerator = 0.
         norm_item_1 = 0.
         for user, score in records_1.items():
-            norm_item_1 += score * score
+            norm_item_1 += 1
             if user in records_2:
-                numerator += score * records_2[user]
+                num_popularity = len(self.user_data[user])
+                numerator += 1.0 / num_popularity
         norm_item_2 = 0.
         for _, score in records_2.items():
-            norm_item_2 += score * score
+            norm_item_2 += 1
         denominator = np.sqrt(norm_item_1) * np.sqrt(norm_item_2)
         return numerator / denominator
 
@@ -185,6 +196,7 @@ def metric_precision(prediction, goals, movie_info):
     计算推荐结果的准确率，即所有推荐结果中，包含在用户已经评分的物品的比例
     :param prediction: list，预测的推荐列表
     :param goals: list，用户实际上已经评分的物品
+    :param movie_info: dict，存储电影ID以及其对应的名称
     :return: float，推荐结果中，命中用户兴趣的比例大小
     """
     count = 0
@@ -205,42 +217,50 @@ def metric_precision(prediction, goals, movie_info):
 
 def print_prediction_result(result, hit_movies, movies_info):
     print('==' * 40)
-    print('The prediction precision is %.2f' % result)
+    print('推荐结果的准确率 %.2f' % result)
     print()
     print('==' * 40)
-    print('And the hit movies are :')
+    print('推荐命中电影: ')
     for item_id in hit_movies:
         print(movies_info[item_id], end=' | ')
     print(end='\n\n')
     print('==' * 40)
 
 
-def test_dithering(prediction, movie_info, prediction_order):
+def test_dithering(prediction, movie_info, prediction_order, seed=1):
     """
     对系统的推荐进行抖动，观察效果
     :param prediction: list，推荐算法直接预测的结果
+    :param movie_info: dict，电影ID对应的电影名称
+    :param prediction_order: dict，记录原始推荐的物品的排序
+    :param seed: int，设置随机数的种子，方便实验的重现
     :return: None
     """
     alphas = [0.1, 0.1, 0.1, 0.5, 0.5, 0.5, 0.9, 0.9, 0.9]
     betas = [1.1, 2.0, 5.0, 1.1, 2.0, 5.0, 1.1, 20.0, 5.0]
     result = dict()
-    seed = 1
+
     for alpha, beta in zip(alphas, betas):
         temp_result = dithering(prediction, alpha, beta, seed)
         result[(alpha, beta)] = temp_result
-    print('The original order of the prediction result:')
+
+    print('原始未抖动的推荐结果为：')
     for item_id in prediction:
         print(item_id, end=' ')
     print(end='\n\n\n')
+
     for key, values in result.items():
         print('--' * 40)
-        print('Dithering of alpha=%f and beta=%f' % (key[0], key[1]), end='\n\n')
+        print('抖动参数 alpha=%f and beta=%f' % (key[0], key[1]), end='\n\n')
+        print('抖动后的物品ID:', end=' ')
         for item_id in values:
             print(item_id, end=' ')
-        print()
+        print(end='\n\n')
+        print('抖动后对应的电影名称:', end=' ')
         for item_id in values:
             print(movie_info[item_id], end=' ')
-        print()
+        print(end='\n\n')
+        print('抖动后对应原来推荐的排序:', end=' ')
         for item_id in values:
             print(prediction_order[item_id], end=' ')
         print(end='\n\n\n')
@@ -249,8 +269,9 @@ def test_dithering(prediction, movie_info, prediction_order):
 def evaluation():
     """
     对推荐的效果进行测试
-    :return: 
+    :return: None
     """
+
     # 读取已有的用户物品评分记录
     rating_data = utility.load_train_data()
     # 读取用来对推荐结果进行测试的记录数据
@@ -264,7 +285,9 @@ def evaluation():
     ucf = UserCF()
     ucf.train(rating_data)
     # 指定预测推荐的用户ID，以及推荐列表的长度
-    user_id = 1
+    np.random.seed(10)
+    user_id = np.random.randint(1, 944)
+    print('待推荐的用户ID:', user_id)
     k = 10
     # 给指定的用户进行推荐
     prediction = ucf.predict_single(user_id, k)
@@ -274,9 +297,10 @@ def evaluation():
     goals = [item_score[0] for item_score in goals]
 
     precision, hit_movies, prediction_order = metric_precision(prediction, goals, movie_info)
+
     print_prediction_result(precision, hit_movies, movie_info)
 
-    test_dithering(prediction, movie_info, prediction_order)
+    test_dithering(prediction, movie_info, prediction_order, seed=1)
 
 
 def main():
