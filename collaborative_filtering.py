@@ -27,9 +27,10 @@ class UserCF(object):
 
     def train(self, rating_data):
         """
-        处理用户-物品评分数据
-        :param rating_data: 
-        :return: 
+        处理用户物品评分数据，分别生成以用户、物品为关键字的字典，方便后续的计算。
+        
+        :param rating_data: list，用户评分记录的三元组
+        :return: None
         """
         for user_id, item_id, score in rating_data:
             self.user_data[user_id][item_id] = np.float32(score)
@@ -38,8 +39,9 @@ class UserCF(object):
     def _similarity_user(self, user_1, user_2):
         """
         计算两个用户之间的cosine相似度，同时添加对热门物品的惩罚
-        :param user_1: 
-        :param user_2: 
+        
+        :param user_1: int，用户ID
+        :param user_2: int，用户ID
         :return: float，两个用户之间的cosine相似度
         """
         records_1 = self.user_data[user_1]
@@ -61,6 +63,7 @@ class UserCF(object):
         """
         根据指定的用户ID，计算与其最为相似的num_dithering个用户，首先对这些相似的用户根据参数alpha和beta进行抖动，
         然后使用num_users用户的历史记录进行推荐计算。
+        
         :param user_id: int，指定的用户ID
         :param alpha: float，抖动的参数，如果为None，代表不进行抖动
         :param beta: float，抖动的参数
@@ -68,6 +71,7 @@ class UserCF(object):
         :param num_dithering: int，参与抖动的用户个数
         :param num_users: int，用来进行推荐计算的用户个数
         :param seed: int，设置随机数生成器的种子，使得实验可以复现
+        :param kargs: dict，收集额外的关键字参数
         :return: 返回给用户推荐的k个物品ID，以及物品ID在未抖动结果中的rank
         """
         candidates = list()
@@ -114,7 +118,8 @@ class UserCF(object):
 
     def predict_single(self, user_id, k=10, num_users=5):
         """
-        对指定的单个用户ID，计算最有可能的k个推荐
+        对指定的单个用户ID，计算最有可能的k个推荐物品ID
+        
         :param user_id: int，待推荐的用户ID
         :param k: int，推荐的物品个数
         :param num_users: int，计算相似邻居用户的个数
@@ -140,6 +145,14 @@ class UserCF(object):
         return [result[i][0] for i in range(k)]
 
     def predict(self, user_ids, k=10, num_users=5):
+        """
+        对指定的用户ID序列计算对每个用户的推荐物品ID
+        
+        :param user_ids: list，待推荐物品的用户ID列表 
+        :param k: int，推荐物品的个数
+        :param num_users: int，计算临近用户的个数
+        :return: dict，以每个待推荐用户的ID为key，value为推荐结果
+        """
         result = dict()
         for user_id in user_ids:
             result[user_id] = self.predict_single(user_id, k, num_users)
@@ -156,9 +169,10 @@ class ItemCF(object):
 
     def train(self, rating_data):
         """
-        处理用户-物品评分数据
-        :param rating_data: 
-        :return: 
+        处理用户物品评分数据三元组
+        
+        :param rating_data: list，用户、物品，以及评分三元组 
+        :return: None
         """
         for user_id, item_id, score in rating_data:
             self.user_data[user_id][item_id] = np.float32(score)
@@ -166,10 +180,11 @@ class ItemCF(object):
 
     def _similarity_item(self, item_1, item_2):
         """
-        计算两个指定物品ID的相似度
-        :param item_1: 
-        :param item_2: 
-        :return: 
+        计算两个指定物品ID的cosine相似度，添加了对活跃用户的惩罚
+        
+        :param item_1: int，物品ID
+        :param item_2: int，物品ID
+        :return: float，计算的两个物品的cosine相似度
         """
         records_1 = self.item_data[item_1]
         records_2 = self.item_data[item_2]
@@ -190,12 +205,14 @@ class ItemCF(object):
         """
         根据指定的用户ID，给用户推荐k个物品，其中推荐物品来自对num_dithering个物品抖动后的结果，因此
         指定的参数中必须满足num_dithering >= k
+        
         :param user_id: int，指定的用户ID
         :param alpha: float，抖动操作的参数，如果为None，则代表不进行抖动操作
         :param beta: float，抖动操作的参数，如果为None，则代表不进行抖动操作
         :param k: int，推荐的物品个数
         :param num_dithering: int，抖动的物品个数
         :param seed: int，随机数生成器的种子，使得实验可以复现
+        :param kargs: dict，收集额外的关键字参数
         :return: 返回推荐的k个物品的ID，以及推荐结果在原始未抖动结果的rank
         """
         used_items = self.user_data[user_id]
@@ -221,10 +238,11 @@ class ItemCF(object):
 
     def predict_single(self, user_id, k=10):
         """
-        根据指定的用户ID，给用户推荐top-K个电影
-        :param user_id: int, 指定的用户ID
-        :param k: int, 个数
-        :return: list, Top-K个电影的ID，按照推荐强度从大到小排序
+        根据指定的用户ID，给用户推荐k个物品
+        
+        :param user_id: int，指定的用户ID
+        :param k: int，推荐物品的个数
+        :return: list，推荐的k个物品的ID，按照推荐强度从大到小排序
         """
         items = self.user_data[user_id]
         candidates = []
@@ -240,10 +258,11 @@ class ItemCF(object):
 
     def predict(self, user_ids, k=10):
         """
-        预测给定用户ID列表中，用户最有可能观看的K部电影
-        :param user_ids: 
-        :param k:
-        :return: 
+        对于给定的多个用户ID列表，对每一个用户推荐k个物品
+        
+        :param user_ids: list，多个用户ID的列表 
+        :param k: int，推荐的物品个数
+        :return: dict，以用户ID为key，推荐结果为value
         """
         result = dict()
         for user_id in user_ids:
@@ -253,6 +272,12 @@ class ItemCF(object):
 
 
 def process_test_data(rating_data):
+    """
+    处理用来评估推荐结果的测试数据，将其转化为以用户ID为key的字典
+    
+    :param rating_data: list，用户、物品，以及评分记录三元组 
+    :return: dict，整理后的数据
+    """
     dict_data = collections.defaultdict(dict)
     for user_id, item_id, score in rating_data:
         dict_data[user_id][item_id] = score
@@ -262,6 +287,7 @@ def process_test_data(rating_data):
 def metric_precision(prediction, goals):
     """
     计算推荐结果的准确率，即所有推荐结果中，包含在用户已经评分的物品的比例
+    
     :param prediction: list，预测的推荐列表
     :param goals: list，用户实际上已经评分的物品
     :return: 返回推荐结果的precision，以及命中的推荐物品ID
@@ -280,6 +306,7 @@ def metric_precision(prediction, goals):
 def evaluate_dithering(user_id, method, movie_info, goals, k=10):
     """
     对Dithering的效果进行评估
+    
     :param user_id: int，待推荐物品的用户ID
     :param method: object，待评估的推荐方法，可调用其dithering_predict方法
     :param movie_info: dict，电影ID对用的电影名称
@@ -330,6 +357,7 @@ def evaluate_dithering(user_id, method, movie_info, goals, k=10):
 def evaluation():
     """
     对推荐的效果进行测试
+    
     :return: None
     """
 
